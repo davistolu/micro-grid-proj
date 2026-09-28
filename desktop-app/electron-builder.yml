@@ -1,0 +1,37 @@
+appId: com.microgrid.ems.simulator
+productName: Microgrid EMS Laboratory
+artifactName: "${productName}-Setup-${version}.${ext}"
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - "electron/**/*"
+  - "renderer/**/*"
+  - "build/**/*"
+  - "package.json"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.ico
+  legalTrademarks: "Microgrid EMS Laboratory"
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: "Microgrid EMS Laboratory"
+  uninstallDisplayName: "Microgrid EMS Laboratory"
+
+portable:
+  artifactName: "${productName}-Portable-${version}.${ext}"
+
+asar: true

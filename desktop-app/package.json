@@ -1,0 +1,21 @@
+{
+  "name": "microgrid-desktop-app",
+  "productName": "Microgrid EMS Laboratory",
+  "version": "1.0.0",
+  "description": "Research-grade solar-diesel-battery microgrid simulation workstation desktop application.",
+  "author": "Microgrid Engineering Team",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "node scripts/dev.js",
+    "prepare:renderer": "node scripts/prepare-renderer.js",
+    "build": "node scripts/prepare-renderer.js",
+    "package": "electron-builder --win",
+    "package:dir": "electron-builder --win --dir"
+  },
+  "devDependencies": {
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}
