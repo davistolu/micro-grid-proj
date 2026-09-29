@@ -33,6 +33,7 @@ import {
   Sparkles,
   SunMedium,
   Timer,
+  Workflow,
   Zap
 } from 'lucide-react'
 import { DEFAULT_PARAMS } from '@/lib/microgrid-engine'
@@ -46,13 +47,14 @@ export default function DocumentationPage() {
     { id: 'quickstart', title: '2. Quick Start Guide (5 Steps)', icon: Sparkles },
     { id: 'subsystems', title: '3. Physical Subsystems & Modeling', icon: Cpu },
     { id: 'algorithms', title: '4. EMS Algorithms: MPC vs Rule EMS', icon: GitCompareArrows },
-    { id: 'degradation', title: '5. Battery Degradation Mechanics', icon: BatteryCharging },
-    { id: 'workstation', title: '6. Workstation Controls & Views', icon: Layers },
-    { id: 'exports', title: '7. Academic Exports (.docx, .m, .csv)', icon: Download },
-    { id: 'matlab', title: '8. MATLAB / Simulink Reproduction', icon: FileCode2 },
-    { id: 'faq', title: '9. FAQ & Engineering Notes', icon: HelpCircle },
-    { id: 'proofs', title: '10. Scientific Verification & Proofs', icon: ShieldCheck },
-    { id: 'references', title: '11. Model References & Sources', icon: FileText }
+    { id: 'method-of-operation', title: '5. Method of Operation & Controller Pipeline', icon: Workflow },
+    { id: 'degradation', title: '6. Battery Degradation Mechanics', icon: BatteryCharging },
+    { id: 'workstation', title: '7. Workstation Controls & 3D Digital Twin', icon: Layers },
+    { id: 'exports', title: '8. Academic Exports (.docx, .m, .csv)', icon: Download },
+    { id: 'matlab', title: '9. MATLAB / Simulink Reproduction', icon: FileCode2 },
+    { id: 'faq', title: '10. FAQ & Engineering Notes', icon: HelpCircle },
+    { id: 'proofs', title: '11. Scientific Verification & Proofs', icon: ShieldCheck },
+    { id: 'references', title: '12. Model References & Sources', icon: FileText }
   ]
 
   const filteredSections = sections.filter((s) =>
@@ -366,10 +368,110 @@ export default function DocumentationPage() {
             </div>
           </section>
 
-          {/* SECTION 5: DEGRADATION */}
+          {/* SECTION 5: METHOD OF OPERATION */}
+          <section id="method-of-operation" className="doc-section">
+            <div className="section-badge">CONTROLLER ARCHITECTURE</div>
+            <h2>5. Method of Operation & Closed-Loop Control Pipeline</h2>
+            <p>
+              The microgrid energy management system operates as a closed-loop discrete-time receding-horizon controller
+              synchronized at &Delta;t = 15-minute sampling intervals (96 intervals per 24-hour diurnal cycle). The operational architecture follows
+              the IEEE Std 2030.7-2017 specification for microgrid energy management controllers.
+            </p>
+
+            <div className="subsystem-block">
+              <h3>5.1 Five-Stage Closed-Loop Control Flow</h3>
+              <p>At each time-step k &isin; &#123;0, 1, ..., 95&#125;, the EMS executes the following sequential pipeline:</p>
+              <div className="specs-grid">
+                <div className="spec-card">
+                  <b>Stage 1: Environmental Disturbance Sensing</b>
+                  <p>
+                    Solar irradiance G(k) is calculated via astronomical Cooper/Kasten models and ambient temperature T_amb(k).
+                    Load demand P_load(k) is measured from consumer smart meters. Forecast vectors are assembled across N_p = 16 steps.
+                  </p>
+                </div>
+                <div className="spec-card">
+                  <b>Stage 2: Battery Electrochemical State Estimation</b>
+                  <p>
+                    State of Charge SOC(k) is updated via Coulomb counting with charge/discharge efficiencies (&eta; = 0.95).
+                    Open-circuit voltage V_oc is mapped from chemistry curves (NMC or LFP), and DoD stress factors are computed.
+                  </p>
+                </div>
+                <div className="spec-card">
+                  <b>Stage 3: Receding-Horizon Predictive Optimization</b>
+                  <p>
+                    In MPC mode, the optimizer evaluates multi-step trajectories of diesel generator loading and battery power
+                    to minimize net cost J (fuel + battery degradation + thermal start penalties + terminal SOC tracking).
+                  </p>
+                </div>
+                <div className="spec-card">
+                  <b>Stage 4: Real-Time AC Bus Actuation</b>
+                  <p>
+                    The first optimal control action u*(k) = [P_dg(k), P_bat(k)] is actuated onto the 400V 3-phase AC bus.
+                    Power conservation is strictly enforced: P_pv + P_dg + P_bat = P_load + P_loss.
+                  </p>
+                </div>
+                <div className="spec-card">
+                  <b>Stage 5: Live Telemetry & 3D Digital Twin Feedback</b>
+                  <p>
+                    Cumulative fuel burn, SOH capacity fade, and CO2 emissions are recorded. The 3D Digital Twin renders
+                    instantaneous power particle flows, engine exhaust smoke, and battery LED SOC meters.
+                  </p>
+                </div>
+                <div className="spec-card">
+                  <b>Receding Horizon Shift</b>
+                  <p>
+                    The prediction window rolls forward by one time step: [k+1, k+1+N_p]. The cycle repeats automatically at the next interval.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="subsystem-block" style={{ marginTop: '20px' }}>
+              <h3>5.2 Custom Physical Equipment Studio & Dual-Mode Parameter Inputs</h3>
+              <p>
+                Unlike rigid demo applications with fixed step sliders, every adjustable parameter in this workstation
+                is a <strong>dual-mode precision input</strong>: an explicit numerical <code>&lt;input type="number"&gt;</code> field
+                allowing direct keyboard typing, paired with a bi-directionally synchronized slider for rapid tactile exploration:
+              </p>
+              <ul>
+                <li>
+                  <strong>PV Rated Capacity (kW):</strong> Direct numeric field (10 kW to 3,000 kW) with synchronized stepper slider.
+                </li>
+                <li>
+                  <strong>Load Demand Scaling (%):</strong> Direct percentage scaling (20% to 300%) applied proportionally across selected archetype diurnal load curves.
+                </li>
+                <li>
+                  <strong>MPC Degradation Weight (λ_deg):</strong> Direct decimal input (0.00 to 1.00, step 0.01) with paired range slider, balancing fuel cost minimization against electrochemical battery wear.
+                </li>
+                <li>
+                  <strong>MPC Lookahead Prediction Horizon (N_p):</strong> Direct integer input (4 to 96 steps, 1.0h to 24.0h) with synchronized range slider.
+                </li>
+                <li>
+                  <strong>Forecast Uncertainty Noise (%):</strong> Direct percentage entry (0% to 50%) injecting zero-mean Gaussian disturbances into lookahead vectors to test MPC feedback robustness.
+                </li>
+                <li>
+                  <strong>BESS Storage Capacity (kWh) & Inverter Power (kW):</strong> Independent energy-to-power (E/P) sizing (20 to 5,000 kWh and 10 to 2,000 kW) with dual inputs and sliders.
+                </li>
+                <li>
+                  <strong>Diesel Generator Prime Capacity (kW), Min Loading (%), & Ramp Rate (kW/15m):</strong> Continuous prime sizing (20 to 2,000 kW), anti-wet-stacking limit (10% to 50%), and thermal ramp constraint (5 to 200 kW/step) with dual inputs and sliders.
+                </li>
+                <li>
+                  <strong>Safe SOC Operating Envelope (%):</strong> Independent numeric inputs for minimum (5%–40%) and maximum (60%–100%) allowable state of charge.
+                </li>
+                <li>
+                  <strong>Delivered Fuel Price ($/L):</strong> Regional economic pricing from $0.20/L to $5.00/L with dual input and slider.
+                </li>
+                <li>
+                  <strong>Simulation Timeline Scrubber & Step Input:</strong> Explicit numeric step input (<code>Step 1..96</code>) paired with an interactive range scrubber slider and 15-minute leap controls.
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          {/* SECTION 6: DEGRADATION */}
           <section id="degradation" className="doc-section">
             <div className="section-badge">ELECTROCHEMICAL WEAR</div>
-            <h2>5. Battery Degradation & Lifetime Mechanics</h2>
+            <h2>6. Battery Degradation & Lifetime Mechanics</h2>
             <p>
               Battery aging comprises both <strong>cyclic degradation</strong> (caused by lithium-ion insertion/extraction stress)
               and <strong>calendar degradation</strong> (SEI passivation layer growth over time):
@@ -401,10 +503,10 @@ export default function DocumentationPage() {
             </div>
           </section>
 
-          {/* SECTION 6: WORKSTATION CONTROLS */}
+          {/* SECTION 7: WORKSTATION CONTROLS */}
           <section id="workstation" className="doc-section">
             <div className="section-badge">INTERACTIVE UI</div>
-            <h2>6. Workstation Controls & Views</h2>
+            <h2>7. Workstation Controls & 3D Digital Twin</h2>
 
             <div className="table-wrapper">
               <table className="doc-table">
@@ -417,44 +519,79 @@ export default function DocumentationPage() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td><strong>Simulation Timer</strong></td>
-                    <td>Playback Bar</td>
-                    <td>Select total run duration (5s, 10s, 20s, 30s, 60s) with live countdown badge.</td>
+                    <td><strong>3D Digital Twin View</strong></td>
+                    <td>Center Workspace</td>
+                    <td>WebGL Three.js compound featuring Daylight Inspection mode (default clear lighting) and Diurnal Sun Cycle mode, dynamic particle energy conduits, LED SOC meter, and animated genset exhaust smoke.</td>
                   </tr>
                   <tr>
-                    <td><strong>Scrubber Slider</strong></td>
+                    <td><strong>Lighting Mode Toggle</strong></td>
+                    <td>3D Overlay Toolbar</td>
+                    <td>Toggle between <em>Daylight</em> (fixed high-visibility midday sun, 2.4 intensity) and <em>Diurnal</em> (dynamic 24h solar orbit with architectural night floodlights, 3.5 intensity).</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Camera POV Presets</strong></td>
+                    <td>3D Overlay Toolbar</td>
+                    <td>Instant one-click camera focus: Aerial Isometric, Solar PV Park, BESS Enclosures, Diesel Genset, AC Substation, and Load Facility, plus Fullscreen 3D.</td>
+                  </tr>
+                  <tr>
+                    <td><strong>2D Schematic Flow View</strong></td>
+                    <td>Center Workspace</td>
+                    <td>High-contrast bus diagram detailing instantaneous power transfers, inverter loss, and electrical balance.</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Method of Operation Modal</strong></td>
+                    <td>Top Header / Workspace</td>
+                    <td>Interactive modal displaying the 5-stage closed-loop MPC pipeline, multi-objective formulation, rule heuristics, and operator workflow guide.</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Dual-Mode Equipment Studio</strong></td>
+                    <td>Left Sidebar</td>
+                    <td>Direct keyboard numeric inputs AND synchronized continuous sliders for PV kW, DG kW, BESS kWh/kW, DG min loading, DG ramp bound, SOC limits, and fuel price.</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Simulation Timer</strong></td>
                     <td>Playback Bar</td>
-                    <td>Scrub to any of the 96 discrete 15-minute time steps (T+00:00 to T+23:45).</td>
+                    <td>Direct numerical duration typing in seconds (1s to 600s) plus one-click preset buttons (5s, 10s, 20s, 30s, 60s) with live countdown badge.</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Dual Step Input & Scrubber Range</strong></td>
+                    <td>Playback Bar</td>
+                    <td>Type exact discrete step number (<code>Step 1..96</code>) or drag the continuous timeline range scrubber to scrub anywhere across the 24-hour horizon.</td>
                   </tr>
                   <tr>
                     <td><strong>Dual Compare View</strong></td>
                     <td>Top Header</td>
-                    <td>Renders side-by-side power conduit cards comparing active MPC vs Rule EMS dispatches.</td>
+                    <td>Renders side-by-side power conduit cards comparing active MPC vs Rule EMS dispatches synchronously.</td>
                   </tr>
                   <tr>
-                    <td><strong>Degradation Weight (lambda_deg)</strong></td>
+                    <td><strong>Degradation Weight (λ_deg)</strong></td>
                     <td>Left Sidebar</td>
-                    <td>Tuning slider balancing fuel minimization vs battery preservation in the MPC cost function.</td>
+                    <td>Dual numeric input (0.00–1.00) and paired range slider balancing fuel minimization against battery degradation in the MPC objective functional.</td>
                   </tr>
                   <tr>
-                    <td><strong>Forecast Noise Slider</strong></td>
+                    <td><strong>Prediction Horizon (N_p)</strong></td>
                     <td>Left Sidebar</td>
-                    <td>Injects stochastic Gaussian noise into the lookahead forecast to test MPC robustness.</td>
+                    <td>Dual numeric input (4–96 steps) and paired range slider adjusting lookahead foresight horizon from 1.0 hour to 24.0 hours.</td>
                   </tr>
                   <tr>
-                    <td><strong>5 Chart Views</strong></td>
+                    <td><strong>Forecast Noise Ratio</strong></td>
+                    <td>Left Sidebar</td>
+                    <td>Dual numeric percentage input (0%–50%) and paired range slider injecting stochastic Gaussian forecasting disturbances into lookahead vectors.</td>
+                  </tr>
+                  <tr>
+                    <td><strong>5 Scientific Chart Views</strong></td>
                     <td>Center Panel</td>
-                    <td>Switch between Power Dispatch, SOC/SOH, Economic Cost, Rainflow DoD Fatigue, and CO2/RE.</td>
+                    <td>Switch between Power Dispatch, SOC/SOH, Economic Cost, Rainflow DoD Fatigue, and CO2/RE fractions.</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </section>
 
-          {/* SECTION 7: EXPORTS */}
+          {/* SECTION 8: EXPORTS */}
           <section id="exports" className="doc-section">
             <div className="section-badge">PUBLICATIONS & ARTIFACTS</div>
-            <h2>7. Academic Exports (.docx, .m, .csv, .json)</h2>
+            <h2>8. Academic Exports (.docx, .m, .csv, .json)</h2>
             <p>The laboratory includes export generators designed for peer-reviewed academic publication and thesis documentation:</p>
 
             <div className="exports-grid">
@@ -500,10 +637,10 @@ export default function DocumentationPage() {
             </div>
           </section>
 
-          {/* SECTION 8: MATLAB REPRODUCTION */}
+          {/* SECTION 9: MATLAB REPRODUCTION */}
           <section id="matlab" className="doc-section">
             <div className="section-badge">VERIFICATION</div>
-            <h2>8. MATLAB / Simulink Reproduction Workflow</h2>
+            <h2>9. MATLAB / Simulink Reproduction Workflow</h2>
             <p>To reproduce and verify the simulation results in MATLAB or Simscape Electrical:</p>
 
             <div className="code-block-box">
@@ -524,10 +661,10 @@ export default function DocumentationPage() {
             </div>
           </section>
 
-          {/* SECTION 9: FAQ */}
+          {/* SECTION 10: FAQ */}
           <section id="faq" className="doc-section">
             <div className="section-badge">TROUBLESHOOTING</div>
-            <h2>9. FAQ & Engineering Notes</h2>
+            <h2>10. FAQ & Engineering Notes</h2>
 
             <div className="faq-item">
               <h4>Why does MPC achieve longer battery lifetime even though throughput is similar?</h4>
@@ -547,25 +684,45 @@ export default function DocumentationPage() {
             </div>
 
             <div className="faq-item">
+              <h4>Can I enter exact numerical values instead of dragging sliders?</h4>
+              <p>
+                Yes. In this workstation, all adjustable parameters are equipped with dedicated <code>&lt;input type="number"&gt;</code> fields
+                for exact keyboard numeric entry (PV kW, Load Scaling %, λ_deg, N_p lookahead steps, noise %, battery storage kWh, inverter kW,
+                generator prime kW, min loading %, ramp limits, safe SOC bounds, fuel price, and the 1..96 discrete step scrubber).
+                Each input is bi-directionally synchronized with a continuous slider, guaranteeing zero guesswork and full mathematical reproducibility.
+              </p>
+            </div>
+
+            <div className="faq-item">
               <h4>Can I test MPC robustness under forecasting errors?</h4>
               <p>
-                Yes. Adjust the <strong>Forecast Noise Ratio</strong> slider in the sidebar. This injects zero-mean Gaussian
-                disturbances into the lookahead solar and load vectors to test the closed-loop receding-horizon feedback behavior of the MPC controller.
+                Yes. Enter an exact percentage in the <strong>Forecast Noise Ratio</strong> numeric input or adjust the synchronized slider in the sidebar.
+                This injects zero-mean Gaussian disturbances into the lookahead solar and load vectors to test the closed-loop receding-horizon feedback behavior of the MPC controller.
+              </p>
+            </div>
+
+            <div className="faq-item">
+              <h4>How do I control the 3D scene lighting, and why does it start bright?</h4>
+              <p>
+                The 3D Digital Twin starts in <strong>Daylight Inspection Mode</strong> by default with a high midday sun (2.4 intensity) and balanced ambient fill (0.85),
+                ensuring all physical compound assets are crisp and clearly visible on initial load. Users can toggle to <strong>Diurnal Sun Cycle</strong> mode
+                anytime via the <em>Daylight / Diurnal</em> button in the 3D toolbar. In Diurnal mode, nighttime is equipped with architectural facility floodlights
+                (3.5 intensity) and soft moonlight fill, ensuring equipment remains completely visible at night.
               </p>
             </div>
           </section>
 
-          {/* SECTION 10: SCIENTIFIC VERIFICATION & PROOFS */}
+          {/* SECTION 11: SCIENTIFIC VERIFICATION & PROOFS */}
           <section id="proofs" className="doc-section">
             <div className="section-badge">ANALYTICAL RIGOR</div>
-            <h2>10. Scientific Verification & Mathematical Proofs</h2>
+            <h2>11. Scientific Verification & Mathematical Proofs</h2>
             <p>
               This section provides step-by-step mathematical proofs demonstrating why the microgrid simulation results
               are reproducible, physically consistent, and readily verifiable by academic reviewers.
             </p>
 
             <div className="subsystem-block">
-              <h3>10.1 Proof of Microgrid AC Bus Conservation of Power</h3>
+              <h3>11.1 Proof of Microgrid AC Bus Conservation of Power</h3>
               <p>
                 At every discrete 15-minute interval k ∈ &#123;0, 1, ..., 95&#125;, the algebraic nodal power balance holds strictly:
               </p>
@@ -579,7 +736,7 @@ export default function DocumentationPage() {
             </div>
 
             <div className="subsystem-block">
-              <h3>10.2 Proof of Generator Fuel Savings (BSFC Sweet-Spot vs Idling)</h3>
+              <h3>11.2 Proof of Generator Fuel Savings (BSFC Sweet-Spot vs Idling)</h3>
               <p>
                 The diesel engine fuel consumption follows the calibrated quadratic BSFC model:
               </p>
@@ -614,7 +771,7 @@ export default function DocumentationPage() {
             </div>
 
             <div className="subsystem-block">
-              <h3>10.3 Proof of Battery Lifetime Extension (Wöhler DoD Fatigue Mitigation)</h3>
+              <h3>11.3 Proof of Battery Lifetime Extension (Wöhler DoD Fatigue Mitigation)</h3>
               <p>
                 Battery cyclic capacity fade is scaled by the semi-empirical Wöhler stress factor f_DoD(SOC):
               </p>
@@ -629,7 +786,7 @@ export default function DocumentationPage() {
             </div>
 
             <div className="subsystem-block">
-              <h3>10.4 Proof of Stoichiometric Carbon Emissions Accounting</h3>
+              <h3>11.4 Proof of Stoichiometric Carbon Emissions Accounting</h3>
               <p>
                 Carbon dioxide emissions strictly obey stoichiometric mass balance:
               </p>
@@ -642,10 +799,10 @@ export default function DocumentationPage() {
             </div>
           </section>
 
-          {/* SECTION 11: REFERENCES */}
+          {/* SECTION 12: REFERENCES */}
           <section id="references" className="doc-section">
             <div className="section-badge">BIBLIOGRAPHY</div>
-            <h2>11. Model References & Scientific Sources</h2>
+            <h2>12. Model References & Scientific Sources</h2>
             <ul className="doc-list" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <li><strong>[1] Kasten, F. & Young, A. T. (1989):</strong> "Revised optical air mass tables and approximation formula." <em>Applied Optics</em>, 28(22), pp. 4735–4738.</li>
               <li><strong>[2] Cooper, P. I. (1969):</strong> "The absorption of radiation in solar stills." <em>Solar Energy</em>, 12(3), pp. 333–346.</li>

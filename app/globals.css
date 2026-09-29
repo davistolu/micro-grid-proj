@@ -477,6 +477,45 @@ input[type=range] {
   box-shadow: 0 0 10px rgba(231, 173, 85, 0.15);
 }
 
+.manual-step-input-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #101c24;
+  border: 1px solid #233742;
+  border-radius: 5px;
+  padding: 2px 7px;
+}
+
+.step-number-input {
+  width: 28px;
+  background: transparent;
+  border: none;
+  color: var(--cyan);
+  font: 11px var(--font-mono);
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  padding: 0;
+}
+
+.step-number-input::-webkit-inner-spin-button,
+.step-number-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.timeline-scrubber-range {
+  flex: 1;
+  min-width: 140px;
+  accent-color: var(--cyan);
+  cursor: pointer;
+  height: 8px;
+  margin: 0 8px;
+  background: #202e37;
+  border-radius: 4px;
+}
+
 .progress-track {
   flex: 1;
   min-width: 130px;
@@ -2485,3 +2524,162 @@ footer {
   }
 }
 
+/* -------------------------------------------------------------
+ * 3D DIGITAL TWIN & DIRECT NUMERICAL PARAMETER STUDIO STYLING
+ * ------------------------------------------------------------- */
+.stage-view-switcher {
+  display: inline-flex;
+  align-items: center;
+  background: #09131a;
+  border: 1px solid #1c2f3d;
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.stage-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #8da2ae;
+  font: 11px var(--font-sans);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.stage-tab-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.stage-tab-btn.active {
+  background: #142835;
+  color: var(--cyan);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.threed-stage-wrapper {
+  position: relative;
+  width: 100%;
+  height: 480px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #1c2f3d;
+  background: #060b10;
+}
+
+/* Direct Numeric Parameter Inputs */
+.num-input-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid #15222c;
+}
+
+.num-input-row:last-child {
+  border-bottom: none;
+}
+
+.num-input-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: #a0b4c2;
+}
+
+.num-input-label small {
+  font-size: 9px;
+  color: #657b88;
+}
+
+.num-input-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #070e14;
+  border: 1px solid #203544;
+  border-radius: 4px;
+  padding: 2px 6px;
+  transition: border-color 0.15s ease;
+}
+
+.num-input-box:focus-within {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 1px var(--cyan);
+}
+
+.num-input-field {
+  width: 58px;
+  background: transparent;
+  border: none;
+  color: var(--amber);
+  font: 11px var(--font-mono);
+  font-weight: 700;
+  text-align: right;
+  padding: 1px 0;
+  outline: none;
+}
+
+.num-input-field:focus {
+  color: #fff;
+}
+
+.num-input-field::-webkit-inner-spin-button,
+.num-input-field::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.num-input-unit {
+  font: 10px var(--font-mono);
+  color: #728996;
+}
+
+.param-preset-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #1a2a35;
+}
+
+.param-preset-chip {
+  background: #101c25;
+  border: 1px solid #1e3341;
+  color: #8fa5b3;
+  border-radius: 3px;
+  padding: 3px 6px;
+  font: 9px var(--font-mono);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.param-preset-chip:hover {
+  background: #172a38;
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+
+.method-modal {
+  animation: fadeInModal 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInModal {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}

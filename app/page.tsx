@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import {
   Activity,
   BatteryCharging,
@@ -10,6 +11,7 @@ import {
   Clock,
   Copy,
   Download,
+  Eye,
   FileCode2,
   FileSpreadsheet,
   FileText,
@@ -29,6 +31,7 @@ import {
   Sparkles,
   SunMedium,
   Timer,
+  Workflow,
   X,
   Zap
 } from 'lucide-react'
@@ -50,6 +53,29 @@ import {
   SystemParameters,
   Weather
 } from '@/lib/microgrid-types'
+import MethodOfOperationModal from '@/components/method-of-operation-modal'
+
+// Dynamic WebGL 3D Scene (client-side only to ensure clean static export)
+const Microgrid3DScene = dynamic(() => import('@/components/microgrid-3d-scene'), {
+  ssr: false,
+  loading: () => (
+    <div
+      className="threed-stage-wrapper"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '10px',
+        color: '#6e8594',
+        fontSize: '12px'
+      }}
+    >
+      <Clock size={20} className="animate-spin" style={{ color: 'var(--cyan)' }} />
+      <span>Loading 3D Digital Twin Simulation Engine...</span>
+    </div>
+  )
+})
 
 // Multi-series SVG Sparkline Chart with Progressive Reveal Support
 function MultiSparkline({
@@ -199,9 +225,23 @@ export default function MicrogridLabPage() {
   const [batteryChemistry, setBatteryChemistry] = useState<BatteryChemistry>('Lithium NMC (High Energy)')
   const [ruleStrategy, setRuleStrategy] = useState<RuleStrategy>('Load Following')
 
-  // Scalings & Optimizer Tuning
-  const [pvScale, setPvScale] = useState(1.0)
-  const [loadScale, setLoadScale] = useState(1.0)
+  // 3D Digital Twin View & Method of Operation
+  const [stageView, setStageView] = useState<'3d' | '2d'>('3d')
+  const [showMethodModal, setShowMethodModal] = useState<boolean>(false)
+
+  // Direct Custom Physical Equipment Parameters (Editable real numbers)
+  const [pvKw, setPvKw] = useState<number>(180)
+  const [loadScalePct, setLoadScalePct] = useState<number>(100)
+  const [dieselKw, setDieselKw] = useState<number>(125)
+  const [dieselMinLoadPct, setDieselMinLoadPct] = useState<number>(25)
+  const [dieselRampKw, setDieselRampKw] = useState<number>(35)
+  const [fuelPrice, setFuelPrice] = useState<number>(1.15)
+  const [batteryKwh, setBatteryKwh] = useState<number>(310)
+  const [batteryKw, setBatteryKw] = useState<number>(85)
+  const [minSocPct, setMinSocPct] = useState<number>(15)
+  const [maxSocPct, setMaxSocPct] = useState<number>(95)
+
+  // Optimizer Tuning
   const [lambdaDeg, setLambdaDeg] = useState(0.38)
   const [horizonSteps, setHorizonSteps] = useState(16)
   const [forecastNoise, setForecastNoise] = useState(0.0)
@@ -222,29 +262,53 @@ export default function MicrogridLabPage() {
   const [copiedText, setCopiedText] = useState(false)
   const [isGeneratingDocx, setIsGeneratingDocx] = useState(false)
 
-  // Parameter Bundle
+  // Dynamic Parameter Bundle with Physical Equipment Ratings
   const currentParams = useMemo<Partial<SystemParameters>>(() => {
     const isLfp = batteryChemistry.includes('LFP')
     return {
+      pvRatedCapacityKw: pvKw,
+      dieselRatedCapacityKw: dieselKw,
+      dieselMinLoadRatio: Math.max(0.1, Math.min(0.6, dieselMinLoadPct / 100)),
+      dieselMaxRampKw: Math.max(5, Math.min(200, dieselRampKw)),
+      fuelPricePerLiter: Math.max(0.1, fuelPrice),
+      batteryCapacityKwh: Math.max(20, batteryKwh),
+      batteryMaxPowerKw: Math.max(5, batteryKw),
+      batteryMinSoc: Math.max(0.05, Math.min(0.4, minSocPct / 100)),
+      batteryMaxSoc: Math.max(0.6, Math.min(1.0, maxSocPct / 100)),
       lambdaDegradation: lambdaDeg,
       horizonSteps,
       forecastNoiseRatio: forecastNoise,
       batteryChemistry,
       batteryRefCycleLife: isLfp ? 6000 : 3500,
-      batteryReplacementCost: isLfp ? 36000 : 42000,
+      batteryReplacementCost: isLfp ? Math.round(batteryKwh * 115) : Math.round(batteryKwh * 135),
       ruleStrategy
     }
-  }, [lambdaDeg, horizonSteps, forecastNoise, batteryChemistry, ruleStrategy])
+  }, [
+    pvKw,
+    dieselKw,
+    dieselMinLoadPct,
+    dieselRampKw,
+    fuelPrice,
+    batteryKwh,
+    batteryKw,
+    minSocPct,
+    maxSocPct,
+    lambdaDeg,
+    horizonSteps,
+    forecastNoise,
+    batteryChemistry,
+    ruleStrategy
+  ])
 
   // Run Simulations
   const mpc = useMemo<SimulationSummary>(
-    () => runSimulation('MPC', weather, pvScale, loadScale, loadProfile, currentParams),
-    [weather, pvScale, loadScale, loadProfile, currentParams]
+    () => runSimulation('MPC', weather, 1.0, loadScalePct / 100, loadProfile, currentParams),
+    [weather, loadScalePct, loadProfile, currentParams]
   )
 
   const rule = useMemo<SimulationSummary>(
-    () => runSimulation('Rule EMS', weather, pvScale, loadScale, loadProfile, currentParams),
-    [weather, pvScale, loadScale, loadProfile, currentParams]
+    () => runSimulation('Rule EMS', weather, 1.0, loadScalePct / 100, loadProfile, currentParams),
+    [weather, loadScalePct, loadProfile, currentParams]
   )
 
   const activeRun = mode === 'MPC' ? mpc : rule
@@ -253,8 +317,8 @@ export default function MicrogridLabPage() {
   const currentRule: StepTelemetry = rule.steps[currentStepIndex] || rule.steps[0]
 
   // Chart domains derived directly from physical ratings
-  const dispatchDomainMax = Math.round(Math.max(DEFAULT_PARAMS.pvRatedCapacityKw * pvScale, DEFAULT_PARAMS.dieselRatedCapacityKw + 20))
-  const dispatchDomainMin = -DEFAULT_PARAMS.batteryMaxPowerKw
+  const dispatchDomainMax = Math.round(Math.max(pvKw, dieselKw + 20))
+  const dispatchDomainMin = -batteryKw
   const agingDomainMax = Math.ceil(Math.max(4.0, ...mpc.steps.map((x) => x.cycleFatigueFactor), ...rule.steps.map((x) => x.cycleFatigueFactor)) * 10) / 10
 
   // Step-cumulative metrics accumulated strictly up to currentStepIndex
@@ -350,36 +414,97 @@ export default function MicrogridLabPage() {
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
   }
 
-  // Quick Preset Handlers
+  // Quick Scenario Preset Handlers
   const applyPreset = (presetName: string) => {
     if (presetName === 'island') {
       setWeather('Clear')
       setLoadProfile('Commercial Outpost')
       setBatteryChemistry('Lithium NMC (High Energy)')
-      setPvScale(1.0)
-      setLoadScale(1.0)
+      setPvKw(180)
+      setLoadScalePct(100)
+      setDieselKw(125)
+      setBatteryKwh(310)
+      setBatteryKw(85)
       setLambdaDeg(0.38)
     } else if (presetName === 'variable') {
       setWeather('Variable')
       setLoadProfile('Remote Community')
       setBatteryChemistry('Lithium LFP (High Cycle Life)')
-      setPvScale(1.25)
-      setLoadScale(1.1)
+      setPvKw(225)
+      setLoadScalePct(110)
+      setDieselKw(125)
+      setBatteryKwh(400)
+      setBatteryKw(100)
       setLambdaDeg(0.55)
     } else if (presetName === 'mining') {
       setWeather('Cloudy')
       setLoadProfile('Mining Camp')
       setBatteryChemistry('Lithium NMC (High Energy)')
-      setPvScale(0.85)
-      setLoadScale(1.25)
+      setPvKw(150)
+      setLoadScalePct(125)
+      setDieselKw(200)
+      setBatteryKwh(310)
+      setBatteryKw(90)
       setLambdaDeg(0.30)
     } else if (presetName === 'hospital') {
       setWeather('Partly cloudy')
       setLoadProfile('Industrial Hospital')
       setBatteryChemistry('Lithium LFP (High Cycle Life)')
-      setPvScale(1.1)
-      setLoadScale(1.05)
+      setPvKw(200)
+      setLoadScalePct(105)
+      setDieselKw(150)
+      setBatteryKwh(500)
+      setBatteryKw(120)
       setLambdaDeg(0.45)
+    }
+  }
+
+  // Quick Physical Equipment Sizing Presets
+  const applyEquipmentPreset = (preset: 'benchmark' | 'commercial' | 'minigrid' | 'industrial' | 'reset') => {
+    if (preset === 'benchmark' || preset === 'reset') {
+      setPvKw(180)
+      setLoadScalePct(100)
+      setDieselKw(125)
+      setDieselMinLoadPct(25)
+      setDieselRampKw(35)
+      setFuelPrice(1.15)
+      setBatteryKwh(310)
+      setBatteryKw(85)
+      setMinSocPct(15)
+      setMaxSocPct(95)
+    } else if (preset === 'commercial') {
+      setPvKw(350)
+      setLoadScalePct(120)
+      setDieselKw(200)
+      setDieselMinLoadPct(25)
+      setDieselRampKw(50)
+      setFuelPrice(1.15)
+      setBatteryKwh(500)
+      setBatteryKw(150)
+      setMinSocPct(20)
+      setMaxSocPct(95)
+    } else if (preset === 'minigrid') {
+      setPvKw(100)
+      setLoadScalePct(80)
+      setDieselKw(75)
+      setDieselMinLoadPct(30)
+      setDieselRampKw(25)
+      setFuelPrice(1.35)
+      setBatteryKwh(200)
+      setBatteryKw(60)
+      setMinSocPct(15)
+      setMaxSocPct(90)
+    } else if (preset === 'industrial') {
+      setPvKw(600)
+      setLoadScalePct(150)
+      setDieselKw(450)
+      setDieselMinLoadPct(25)
+      setDieselRampKw(90)
+      setFuelPrice(1.10)
+      setBatteryKwh(1200)
+      setBatteryKw(350)
+      setMinSocPct(15)
+      setMaxSocPct(95)
     }
   }
 
@@ -392,9 +517,9 @@ export default function MicrogridLabPage() {
     return generateMatlabScript(mpc, rule, weather, loadProfile, {
       ...DEFAULT_PARAMS,
       ...currentParams,
-      pvRatedCapacityKw: Math.round(DEFAULT_PARAMS.pvRatedCapacityKw * pvScale)
+      pvRatedCapacityKw: pvKw
     } as SystemParameters)
-  }, [mpc, rule, weather, loadProfile, currentParams, pvScale])
+  }, [mpc, rule, weather, loadProfile, currentParams, pvKw])
 
   const downloadDocx = async () => {
     setIsGeneratingDocx(true)
@@ -447,7 +572,7 @@ export default function MicrogridLabPage() {
   const downloadJson = () => {
     const payload = {
       studyTopic: 'MODEL PREDICTIVE ENERGY MANAGEMENT OF SOLAR–DIESEL–BATTERY MICROGRIDS CONSIDERING BATTERY DEGRADATION',
-      scenario: { weather, loadProfile, batteryChemistry, pvScale, loadScale, lambdaDegradation: lambdaDeg, horizonSteps },
+      scenario: { weather, loadProfile, batteryChemistry, pvKw, loadScalePct, dieselKw, batteryKwh, batteryKw, fuelPrice, lambdaDegradation: lambdaDeg, horizonSteps },
       mpcSummary: mpc,
       ruleSummary: rule
     }
@@ -520,6 +645,16 @@ export default function MicrogridLabPage() {
         <div className="top-actions">
           <span className="status-dot" />
           <span>ENGINE READY</span>
+
+          <button
+            className="ghost"
+            style={{ background: 'rgba(69, 212, 209, 0.12)', borderColor: 'var(--cyan)', color: 'var(--cyan)' }}
+            onClick={() => setShowMethodModal(true)}
+            title="Open Method of Operation, Closed-Loop Architecture & Controller Pipeline"
+          >
+            <Workflow size={14} />
+            Method of Operation
+          </button>
 
           <Link
             href="/docs"
@@ -623,69 +758,167 @@ export default function MicrogridLabPage() {
             </select>
           </label>
 
-          <label>
-            PV Capacity Scale <b>{Math.round(DEFAULT_PARAMS.pvRatedCapacityKw * pvScale)} kW</b>
-            <input
-              type="range"
-              min="0.65"
-              max="1.50"
-              step="0.05"
-              value={pvScale}
-              onChange={(e) => setPvScale(parseFloat(e.target.value))}
-            />
-          </label>
+          {/* DIRECT NUMERIC PARAMETER STUDIO: PV & LOAD */}
+          <div className="num-input-row" style={{ marginTop: '8px' }}>
+            <div className="num-input-label">
+              <span style={{ fontWeight: 600, color: '#fff' }}>PV Rated Capacity</span>
+              <small>Plant DC nameplate rating</small>
+            </div>
+            <div className="num-input-box" title="Directly type custom solar PV rated capacity in kW">
+              <input
+                type="number"
+                min={10}
+                max={3000}
+                step={5}
+                value={pvKw}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value)
+                  setPvKw(isNaN(val) ? 10 : Math.max(10, Math.min(3000, val)))
+                }}
+                className="num-input-field"
+              />
+              <span className="num-input-unit">kW</span>
+            </div>
+          </div>
+          <input
+            type="range"
+            min="10"
+            max="3000"
+            step="5"
+            value={pvKw}
+            onChange={(e) => setPvKw(parseFloat(e.target.value))}
+            style={{ margin: '2px 0 10px 0' }}
+          />
 
-          <label>
-            Load Scaling <b>{Math.round(loadScale * 100)}%</b>
-            <input
-              type="range"
-              min="0.65"
-              max="1.50"
-              step="0.05"
-              value={loadScale}
-              onChange={(e) => setLoadScale(parseFloat(e.target.value))}
-            />
-          </label>
+          <div className="num-input-row">
+            <div className="num-input-label">
+              <span style={{ fontWeight: 600, color: '#fff' }}>Load Demand Scaling</span>
+              <small>Scale {loadProfile} baseline</small>
+            </div>
+            <div className="num-input-box" title="Directly type custom load demand scale percentage">
+              <input
+                type="number"
+                min={20}
+                max={300}
+                step={5}
+                value={loadScalePct}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value)
+                  setLoadScalePct(isNaN(val) ? 20 : Math.max(20, Math.min(300, val)))
+                }}
+                className="num-input-field"
+              />
+              <span className="num-input-unit">%</span>
+            </div>
+          </div>
+          <input
+            type="range"
+            min="20"
+            max="300"
+            step="5"
+            value={loadScalePct}
+            onChange={(e) => setLoadScalePct(parseFloat(e.target.value))}
+            style={{ margin: '2px 0 10px 0' }}
+          />
 
           {/* MPC TUNING CARD */}
           <div className="config-card">
             <div className="eyebrow">MPC OPTIMIZER TUNING</div>
 
-            <label style={{ margin: '8px 0' }}>
-              Degradation Weight (λdeg) <b>{lambdaDeg.toFixed(2)}</b>
-              <input
-                type="range"
-                min="0.0"
-                max="1.0"
-                step="0.05"
-                value={lambdaDeg}
-                onChange={(e) => setLambdaDeg(parseFloat(e.target.value))}
-              />
-            </label>
+            {/* Degradation Weight */}
+            <div className="num-input-row" style={{ marginTop: '8px' }}>
+              <div className="num-input-label">
+                <span>Degradation Weight (λdeg)</span>
+                <small>Battery preservation weight</small>
+              </div>
+              <div className="num-input-box" title="Directly type degradation penalty weight (0.00 to 1.00)">
+                <input
+                  type="number"
+                  min={0.0}
+                  max={1.0}
+                  step={0.01}
+                  value={lambdaDeg}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value)
+                    setLambdaDeg(isNaN(val) ? 0.0 : Math.max(0, Math.min(1.0, val)))
+                  }}
+                  className="num-input-field"
+                />
+              </div>
+            </div>
+            <input
+              type="range"
+              min="0.0"
+              max="1.0"
+              step="0.01"
+              value={lambdaDeg}
+              onChange={(e) => setLambdaDeg(parseFloat(e.target.value))}
+              style={{ margin: '2px 0 10px 0' }}
+            />
 
-            <label style={{ margin: '8px 0' }}>
-              Prediction Horizon (Np) <b>{horizonSteps * 0.25} h ({horizonSteps} steps)</b>
-              <input
-                type="range"
-                min="8"
-                max="32"
-                step="4"
-                value={horizonSteps}
-                onChange={(e) => setHorizonSteps(parseInt(e.target.value))}
-              />
-            </label>
+            {/* Prediction Horizon */}
+            <div className="num-input-row">
+              <div className="num-input-label">
+                <span>Prediction Horizon (Np)</span>
+                <small>{(horizonSteps * 0.25).toFixed(1)} h lookahead</small>
+              </div>
+              <div className="num-input-box" title="Directly type lookahead prediction horizon steps (4 to 96 steps)">
+                <input
+                  type="number"
+                  min={4}
+                  max={96}
+                  step={1}
+                  value={horizonSteps}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value)
+                    setHorizonSteps(isNaN(val) ? 8 : Math.max(4, Math.min(96, val)))
+                  }}
+                  className="num-input-field"
+                />
+                <span className="num-input-unit">steps</span>
+              </div>
+            </div>
+            <input
+              type="range"
+              min="4"
+              max="96"
+              step="1"
+              value={horizonSteps}
+              onChange={(e) => setHorizonSteps(parseInt(e.target.value))}
+              style={{ margin: '2px 0 10px 0' }}
+            />
 
-            <label style={{ margin: '8px 0' }}>
-              Forecast Uncertainty Noise <b>{Math.round(forecastNoise * 100)}%</b>
-              <input
-                type="range"
-                min="0.0"
-                max="0.25"
-                step="0.05"
-                value={forecastNoise}
-                onChange={(e) => setForecastNoise(parseFloat(e.target.value))}
-              />
-            </label>
+            {/* Forecast Uncertainty Noise */}
+            <div className="num-input-row">
+              <div className="num-input-label">
+                <span>Forecast Noise Ratio</span>
+                <small>Gaussian stochastic error</small>
+              </div>
+              <div className="num-input-box" title="Directly type forecast uncertainty noise percentage (0% to 50%)">
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  step={1}
+                  value={Math.round(forecastNoise * 100)}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value)
+                    setForecastNoise(isNaN(val) ? 0 : Math.max(0, Math.min(50, val)) / 100)
+                  }}
+                  className="num-input-field"
+                />
+                <span className="num-input-unit">%</span>
+              </div>
+            </div>
+            <input
+              type="range"
+              min="0.0"
+              max="0.50"
+              step="0.01"
+              value={forecastNoise}
+              onChange={(e) => setForecastNoise(parseFloat(e.target.value))}
+              style={{ margin: '2px 0 10px 0' }}
+            />
 
             {mode === 'Rule EMS' && (
               <label style={{ margin: '8px 0' }}>
@@ -701,27 +934,292 @@ export default function MicrogridLabPage() {
             )}
           </div>
 
-          <div className="config-card">
-            <div className="eyebrow">EQUIPMENT RATINGS</div>
-            <div className="param">
-              <span>BESS Capacity / Peak</span>
-              <b>{DEFAULT_PARAMS.batteryCapacityKwh} kWh / {DEFAULT_PARAMS.batteryMaxPowerKw} kW</b>
+          {/* CUSTOM PHYSICAL EQUIPMENT SIZING STUDIO */}
+          <div className="config-card" style={{ background: '#0a141c', border: '1px solid #1a303f' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div className="eyebrow" style={{ color: 'var(--cyan)' }}>CUSTOM PHYSICAL EQUIPMENT STUDIO</div>
+              <span style={{ fontSize: '9px', color: '#68808e' }}>DIRECT INPUT</span>
             </div>
-            <div className="param">
-              <span>Diesel Gen Rated</span>
-              <b>{DEFAULT_PARAMS.dieselRatedCapacityKw} kW (min {Math.round(DEFAULT_PARAMS.dieselMinLoadRatio * 100)}%)</b>
+
+            {/* BESS Capacity */}
+            <div className="num-input-row">
+              <div className="num-input-label">
+                <span>BESS Energy Capacity</span>
+                <small>Installed battery storage</small>
+              </div>
+              <div className="num-input-box" title="Type custom battery storage capacity in kWh">
+                <input
+                  type="number"
+                  min={20}
+                  max={5000}
+                  step={10}
+                  value={batteryKwh}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value)
+                    setBatteryKwh(isNaN(val) ? 20 : Math.max(20, Math.min(5000, val)))
+                  }}
+                  className="num-input-field"
+                />
+                <span className="num-input-unit">kWh</span>
+              </div>
             </div>
-            <div className="param">
-              <span>Ramp Rate Bound</span>
-              <b>≤ {DEFAULT_PARAMS.dieselMaxRampKw} kW / 15-min</b>
+            <input
+              type="range"
+              min="20"
+              max="5000"
+              step="10"
+              value={batteryKwh}
+              onChange={(e) => setBatteryKwh(parseFloat(e.target.value))}
+              style={{ margin: '2px 0 8px 0' }}
+            />
+
+            {/* BESS Max Inverter Power */}
+            <div className="num-input-row">
+              <div className="num-input-label">
+                <span>BESS Max Inverter Power</span>
+                <small>Bi-directional PCS rating</small>
+              </div>
+              <div className="num-input-box" title="Type custom battery inverter power rating in kW">
+                <input
+                  type="number"
+                  min={10}
+                  max={2000}
+                  step={5}
+                  value={batteryKw}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value)
+                    setBatteryKw(isNaN(val) ? 10 : Math.max(10, Math.min(2000, val)))
+                  }}
+                  className="num-input-field"
+                />
+                <span className="num-input-unit">kW</span>
+              </div>
             </div>
-            <div className="param">
-              <span>Safe SOC Limits</span>
-              <b>{Math.round(DEFAULT_PARAMS.batteryMinSoc * 100)}% – {Math.round(DEFAULT_PARAMS.batteryMaxSoc * 100)}%</b>
+            <input
+              type="range"
+              min="10"
+              max="2000"
+              step="5"
+              value={batteryKw}
+              onChange={(e) => setBatteryKw(parseFloat(e.target.value))}
+              style={{ margin: '2px 0 8px 0' }}
+            />
+
+            {/* Diesel Gen Capacity */}
+            <div className="num-input-row">
+              <div className="num-input-label">
+                <span>Diesel Gen Prime Rating</span>
+                <small>Continuous generator output</small>
+              </div>
+              <div className="num-input-box" title="Type custom diesel generator prime rated capacity in kW">
+                <input
+                  type="number"
+                  min={20}
+                  max={2000}
+                  step={5}
+                  value={dieselKw}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value)
+                    setDieselKw(isNaN(val) ? 20 : Math.max(20, Math.min(2000, val)))
+                  }}
+                  className="num-input-field"
+                />
+                <span className="num-input-unit">kW</span>
+              </div>
             </div>
-            <div className="param">
-              <span>Fuel Price</span>
-              <b>${DEFAULT_PARAMS.fuelPricePerLiter.toFixed(2)} / Liter</b>
+            <input
+              type="range"
+              min="20"
+              max="2000"
+              step="5"
+              value={dieselKw}
+              onChange={(e) => setDieselKw(parseFloat(e.target.value))}
+              style={{ margin: '2px 0 8px 0' }}
+            />
+
+            {/* Diesel Min Loading */}
+            <div className="num-input-row">
+              <div className="num-input-label">
+                <span>DG Minimum Loading</span>
+                <small>Anti-wet-stacking limit</small>
+              </div>
+              <div className="num-input-box" title="Type custom diesel minimum loading ratio % (e.g. 25%)">
+                <input
+                  type="number"
+                  min={10}
+                  max={50}
+                  step={1}
+                  value={dieselMinLoadPct}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value)
+                    setDieselMinLoadPct(isNaN(val) ? 10 : Math.max(10, Math.min(50, val)))
+                  }}
+                  className="num-input-field"
+                />
+                <span className="num-input-unit">%</span>
+              </div>
+            </div>
+            <input
+              type="range"
+              min="10"
+              max="50"
+              step="1"
+              value={dieselMinLoadPct}
+              onChange={(e) => setDieselMinLoadPct(parseFloat(e.target.value))}
+              style={{ margin: '2px 0 8px 0' }}
+            />
+
+            {/* Diesel Ramp Bound */}
+            <div className="num-input-row">
+              <div className="num-input-label">
+                <span>DG Ramp Rate Limit</span>
+                <small>Max step change (thermal bound)</small>
+              </div>
+              <div className="num-input-box" title="Type custom diesel maximum ramp rate in kW/step">
+                <input
+                  type="number"
+                  min={5}
+                  max={200}
+                  step={5}
+                  value={dieselRampKw}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value)
+                    setDieselRampKw(isNaN(val) ? 5 : Math.max(5, Math.min(200, val)))
+                  }}
+                  className="num-input-field"
+                />
+                <span className="num-input-unit">kW/15m</span>
+              </div>
+            </div>
+            <input
+              type="range"
+              min="5"
+              max="200"
+              step="5"
+              value={dieselRampKw}
+              onChange={(e) => setDieselRampKw(parseFloat(e.target.value))}
+              style={{ margin: '2px 0 8px 0' }}
+            />
+
+            {/* Safe SOC Operating Window */}
+            <div className="num-input-row">
+              <div className="num-input-label">
+                <span>Safe SOC Bounds</span>
+                <small>Min to Max allowable charge</small>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                <div className="num-input-box" title="Minimum SOC limit %">
+                  <input
+                    type="number"
+                    min={5}
+                    max={40}
+                    step={1}
+                    value={minSocPct}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value)
+                      setMinSocPct(isNaN(val) ? 5 : Math.max(5, Math.min(40, val)))
+                    }}
+                    className="num-input-field"
+                    style={{ width: '38px' }}
+                  />
+                  <span className="num-input-unit">%</span>
+                </div>
+                <span style={{ color: '#566e7b', fontSize: '10px' }}>–</span>
+                <div className="num-input-box" title="Maximum SOC limit %">
+                  <input
+                    type="number"
+                    min={60}
+                    max={100}
+                    step={1}
+                    value={maxSocPct}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value)
+                      setMaxSocPct(isNaN(val) ? 60 : Math.max(60, Math.min(100, val)))
+                    }}
+                    className="num-input-field"
+                    style={{ width: '38px' }}
+                  />
+                  <span className="num-input-unit">%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Fuel Price */}
+            <div className="num-input-row">
+              <div className="num-input-label">
+                <span>Diesel Fuel Price</span>
+                <small>Delivered fuel cost</small>
+              </div>
+              <div className="num-input-box" title="Type custom diesel fuel price in USD per Liter">
+                <span className="num-input-unit" style={{ color: 'var(--amber)' }}>$</span>
+                <input
+                  type="number"
+                  min={0.20}
+                  max={5.00}
+                  step={0.05}
+                  value={fuelPrice}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value)
+                    setFuelPrice(isNaN(val) ? 0.2 : Math.max(0.2, Math.min(5.0, val)))
+                  }}
+                  className="num-input-field"
+                />
+                <span className="num-input-unit">/L</span>
+              </div>
+            </div>
+            <input
+              type="range"
+              min="0.20"
+              max="5.00"
+              step="0.05"
+              value={fuelPrice}
+              onChange={(e) => setFuelPrice(parseFloat(e.target.value))}
+              style={{ margin: '2px 0 8px 0' }}
+            />
+
+            {/* QUICK PLANT SIZING PRESETS */}
+            <div className="param-preset-strip">
+              <button
+                type="button"
+                className="param-preset-chip"
+                onClick={() => applyEquipmentPreset('benchmark')}
+                title="Academic Benchmark: 180 kW PV / 310 kWh BESS / 125 kW DG"
+              >
+                Benchmark (180k/310k)
+              </button>
+              <button
+                type="button"
+                className="param-preset-chip"
+                onClick={() => applyEquipmentPreset('commercial')}
+                title="Commercial Microgrid: 350 kW PV / 500 kWh BESS / 200 kW DG"
+              >
+                Commercial (350k/500k)
+              </button>
+              <button
+                type="button"
+                className="param-preset-chip"
+                onClick={() => applyEquipmentPreset('minigrid')}
+                title="Remote Mini-Grid: 100 kW PV / 200 kWh BESS / 75 kW DG"
+              >
+                Mini-Grid (100k/200k)
+              </button>
+              <button
+                type="button"
+                className="param-preset-chip"
+                onClick={() => applyEquipmentPreset('industrial')}
+                title="Industrial Plant: 600 kW PV / 1200 kWh BESS / 450 kW DG"
+              >
+                Industrial (600k/1.2M)
+              </button>
+              <button
+                type="button"
+                className="param-preset-chip"
+                onClick={() => applyEquipmentPreset('reset')}
+                title="Reset all equipment ratings to original defaults"
+                style={{ color: 'var(--amber)' }}
+              >
+                Reset Defaults
+              </button>
             </div>
           </div>
 
@@ -853,9 +1351,28 @@ export default function MicrogridLabPage() {
               </div>
             )}
 
-            <span className="step-readout">
-              T+{formatTime(currentStepIndex)} <small>/ 24:00 (k={currentStepIndex + 1}/96)</small>
-            </span>
+            {/* Direct Step Input */}
+            <div className="manual-step-input-box" title="Directly type simulation step (1 to 96) or scrub slider">
+              <span style={{ fontSize: '10px', color: '#8fa2ae', fontWeight: 600 }}>Step:</span>
+              <input
+                type="number"
+                min={1}
+                max={96}
+                step={1}
+                value={currentStepIndex + 1}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value)
+                  if (!isNaN(val)) {
+                    setCurrentStepIndex(Math.max(0, Math.min(95, val - 1)))
+                  }
+                }}
+                className="step-number-input"
+              />
+              <span className="unit-label">/96</span>
+              <span style={{ fontSize: '10px', color: 'var(--amber)', fontWeight: 600, borderLeft: '1px solid #233742', paddingLeft: '5px' }}>
+                T+{formatTime(currentStepIndex)}
+              </span>
+            </div>
 
             {/* Quick Time Marker Jumps */}
             <div className="time-jumps">
@@ -873,21 +1390,17 @@ export default function MicrogridLabPage() {
               </button>
             </div>
 
-            {/* Timeline Progress Scrubber */}
-            <div
-              className="progress-track"
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect()
-                const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-                setCurrentStepIndex(Math.min(95, Math.floor(ratio * 96)))
-              }}
-              title="Click anywhere to scrub time"
-            >
-              <span
-                className="progress-fill"
-                style={{ width: `${((currentStepIndex + 1) / 96) * 100}%` }}
-              />
-            </div>
+            {/* Timeline Progress Scrubber Slider */}
+            <input
+              type="range"
+              className="timeline-scrubber-range"
+              min={0}
+              max={95}
+              step={1}
+              value={currentStepIndex}
+              onChange={(e) => setCurrentStepIndex(parseInt(e.target.value))}
+              title={`Drag timeline scrubber or type step above: ${currentStepIndex + 1}/96 (T+${formatTime(currentStepIndex)})`}
+            />
 
             {/* Speed selection */}
             <div className="speed-select">
@@ -909,155 +1422,203 @@ export default function MicrogridLabPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span>POWER FLOW ARCHITECTURE & BUS DYNAMICS</span>
                 {dualView && <span className="sub-tag">DUAL SYNCHRONOUS MODE</span>}
-              </div>
-              <span className={`badge ${mode === 'Rule EMS' ? 'rule' : ''}`}>
-                <Activity size={13} /> {mode.toUpperCase()} ACTIVE
-              </span>
-            </div>
 
-            {/* 3-COLUMN PHYSICAL FLOW STAGE */}
-            <div className="flow-stage">
-              {/* LEFT COLUMN: SOLAR & BATTERY */}
-              <div className="flow-col">
-                {/* Solar PV Node */}
-                <div className={`node solar ${current.pv > 1 ? 'active-flow' : ''}`}>
-                  <div className="node-head">
-                    <div className="node-title">
-                      <SunMedium size={16} />
-                      <strong>PV ARRAY</strong>
-                    </div>
-                    <span className="node-tag">{current.solarIrradiance} W/m²</span>
-                  </div>
-                  <div className="node-val">
-                    {current.pv.toFixed(1)} <small>kW</small>
-                  </div>
-                  <div className="node-sub">
-                    Panel: {current.panelTemp}°C · Inverter loss: {current.inverterLoss.toFixed(1)} kW
-                  </div>
-                </div>
-
-                {/* Battery Node */}
-                <div className={`node battery ${Math.abs(current.battery) > 0.5 ? 'active-flow' : ''}`}>
-                  <div className="node-head">
-                    <div className="node-title">
-                      <BatteryCharging size={16} />
-                      <strong>BESS ({batteryChemistry.includes('LFP') ? `LFP ${DEFAULT_PARAMS.batteryCapacityKwh} kWh` : `NMC ${DEFAULT_PARAMS.batteryCapacityKwh} kWh`})</strong>
-                    </div>
-                    <span className="node-tag">{current.cRate.toFixed(2)}C</span>
-                  </div>
-                  <div className="node-val">
-                    {Math.abs(current.battery).toFixed(1)} <small>kW</small>
-                    <span className="node-flow-state">
-                      {current.battery < -0.5 ? ' [CHARGING]' : current.battery > 0.5 ? ' [DISCHARGING]' : ' [IDLE]'}
-                    </span>
-                  </div>
-                  <div className="node-sub">
-                    SOC: {Math.round(current.soc * 100)}% · SOH: {(current.soh * 100).toFixed(3)}% · {current.batteryVolts}V ({current.batteryCurrent}A)
-                  </div>
+                {/* Stage View Switcher: 3D Digital Twin vs 2D Schematic */}
+                <div className="stage-view-switcher" style={{ marginLeft: '12px' }}>
+                  <button
+                    type="button"
+                    className={`stage-tab-btn ${stageView === '3d' ? 'active' : ''}`}
+                    onClick={() => setStageView('3d')}
+                    title="Interactive 3D Digital Twin with Diurnal Sun, Equipment Assets & Particle Conduits"
+                  >
+                    <Eye size={13} /> 3D Digital Twin
+                  </button>
+                  <button
+                    type="button"
+                    className={`stage-tab-btn ${stageView === '2d' ? 'active' : ''}`}
+                    onClick={() => setStageView('2d')}
+                    title="2D High-Contrast Bus Schematic with Instantaneous Flow Vectors"
+                  >
+                    <Layers size={13} /> 2D Schematic Flow
+                  </button>
                 </div>
               </div>
 
-              {/* CENTER COLUMN: CONNECTORS & CENTRAL AC BUS */}
-              <div className="flow-center-col">
-                {/* Top Bridge: Solar to Bus & Bus to Load */}
-                <div className="flow-bridge">
-                  <div className="bridge-segment">
-                    <div
-                      className="bridge-pulse solar"
-                      style={{
-                        width: `${Math.min(100, (current.pv / (DEFAULT_PARAMS.pvRatedCapacityKw * pvScale || 1)) * 100)}%`,
-                        opacity: current.pv > 1 ? 1 : 0.2
-                      }}
-                    />
-                  </div>
-                  <span className="bridge-arrow">→</span>
-                  <div className="bridge-segment">
-                    <div
-                      className="bridge-pulse load"
-                      style={{ width: `${Math.min(100, (current.load / (DEFAULT_PARAMS.dieselRatedCapacityKw + DEFAULT_PARAMS.batteryMaxPowerKw)) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Central AC Bus */}
-                <div className="bus-hub">
-                  <span className="bus-title">CENTRAL AC BUS</span>
-                  <b className="bus-power">
-                    {(current.pv + current.diesel + Math.max(0, current.battery)).toFixed(0)} kW
-                  </b>
-                  <small className="bus-spec">50 Hz · 400 V · 3-Phase</small>
-                  <div className="bus-balance-status">
-                    {current.unmet > 0.1 ? (
-                      <span style={{ color: 'var(--red)' }}>Deficit: {current.unmet.toFixed(1)} kW</span>
-                    ) : (
-                      <span style={{ color: 'var(--green)' }}>✓ Power Balanced</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Bottom Bridge: Battery to Bus & Diesel to Bus */}
-                <div className="flow-bridge">
-                  <div className="bridge-segment">
-                    <div
-                      className={`bridge-pulse ${current.battery >= 0 ? 'battery-dis' : 'battery-chg'}`}
-                      style={{
-                        width: `${Math.min(100, (Math.abs(current.battery) / DEFAULT_PARAMS.batteryMaxPowerKw) * 100)}%`,
-                        opacity: Math.abs(current.battery) > 0.5 ? 1 : 0.2
-                      }}
-                    />
-                  </div>
-                  <span className="bridge-arrow">{current.battery >= 0 ? '→' : '←'}</span>
-                  <div className="bridge-segment">
-                    <div
-                      className="bridge-pulse diesel"
-                      style={{
-                        width: `${Math.min(100, (current.diesel / DEFAULT_PARAMS.dieselRatedCapacityKw) * 100)}%`,
-                        opacity: current.diesel > 1 ? 1 : 0.2
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* RIGHT COLUMN: LOAD & DIESEL */}
-              <div className="flow-col">
-                {/* Load Node */}
-                <div className="node load active-flow">
-                  <div className="node-head">
-                    <div className="node-title">
-                      <Zap size={16} />
-                      <strong>LOAD DEMAND</strong>
-                    </div>
-                    <span className="node-tag">{Math.round(loadScale * 100)}% scale</span>
-                  </div>
-                  <div className="node-val">
-                    {current.load.toFixed(1)} <small>kW</small>
-                  </div>
-                  <div className="node-sub">{loadProfile} profile</div>
-                </div>
-
-                {/* Diesel Gen Node */}
-                <div className={`node diesel ${current.diesel > 1 ? 'active-flow' : ''}`}>
-                  <div className="node-head">
-                    <div className="node-title">
-                      <Gauge size={16} />
-                      <strong>DIESEL GEN ({DEFAULT_PARAMS.dieselRatedCapacityKw} kW)</strong>
-                    </div>
-                    <span className={`node-tag ${current.dgRunning ? 'tag-warn' : ''}`}>
-                      {current.dgRunning ? `${Math.round(current.dgLoadingRatio * 100)}% LOAD` : 'STANDBY'}
-                    </span>
-                  </div>
-                  <div className="node-val">
-                    {current.diesel.toFixed(1)} <small>kW</small>
-                  </div>
-                  <div className="node-sub">
-                    {current.dgRunning
-                      ? `Fuel: ${current.fuelHourlyRate.toFixed(1)} L/h · CO2: ${(current.co2RateKg / 0.25).toFixed(1)} kg/h`
-                      : 'Standby (Cold)'}
-                  </div>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="ghost"
+                  style={{ padding: '4px 10px', fontSize: '11px', borderColor: 'var(--cyan)', color: 'var(--cyan)' }}
+                  onClick={() => setShowMethodModal(true)}
+                  title="View Method of Operation guide & controller architecture flowchart"
+                >
+                  <Workflow size={12} /> Method of Operation
+                </button>
+                <span className={`badge ${mode === 'Rule EMS' ? 'rule' : ''}`}>
+                  <Activity size={13} /> {mode.toUpperCase()} ACTIVE
+                </span>
               </div>
             </div>
+
+            {/* STAGE CONTAINER: 3D DIGITAL TWIN OR 2D FLOW */}
+            {stageView === '3d' ? (
+              <div className="threed-stage-wrapper">
+                <Microgrid3DScene
+                  currentStep={current}
+                  weather={weather}
+                  batteryChemistry={batteryChemistry}
+                  pvRatedKw={pvKw}
+                  dieselRatedKw={dieselKw}
+                  batteryCapacityKwh={batteryKwh}
+                  loadProfile={loadProfile}
+                  mode={mode}
+                />
+              </div>
+            ) : (
+              /* 3-COLUMN PHYSICAL FLOW STAGE (2D SCHEMATIC) */
+              <div className="flow-stage">
+                {/* LEFT COLUMN: SOLAR & BATTERY */}
+                <div className="flow-col">
+                  {/* Solar PV Node */}
+                  <div className={`node solar ${current.pv > 1 ? 'active-flow' : ''}`}>
+                    <div className="node-head">
+                      <div className="node-title">
+                        <SunMedium size={16} />
+                        <strong>PV ARRAY ({pvKw} kW)</strong>
+                      </div>
+                      <span className="node-tag">{current.solarIrradiance} W/m²</span>
+                    </div>
+                    <div className="node-val">
+                      {current.pv.toFixed(1)} <small>kW</small>
+                    </div>
+                    <div className="node-sub">
+                      Panel: {current.panelTemp}°C · Inverter loss: {current.inverterLoss.toFixed(1)} kW
+                    </div>
+                  </div>
+
+                  {/* Battery Node */}
+                  <div className={`node battery ${Math.abs(current.battery) > 0.5 ? 'active-flow' : ''}`}>
+                    <div className="node-head">
+                      <div className="node-title">
+                        <BatteryCharging size={16} />
+                        <strong>BESS ({batteryChemistry.includes('LFP') ? `LFP ${batteryKwh} kWh` : `NMC ${batteryKwh} kWh`})</strong>
+                      </div>
+                      <span className="node-tag">{current.cRate.toFixed(2)}C</span>
+                    </div>
+                    <div className="node-val">
+                      {Math.abs(current.battery).toFixed(1)} <small>kW</small>
+                      <span className="node-flow-state">
+                        {current.battery < -0.5 ? ' [CHARGING]' : current.battery > 0.5 ? ' [DISCHARGING]' : ' [IDLE]'}
+                      </span>
+                    </div>
+                    <div className="node-sub">
+                      SOC: {Math.round(current.soc * 100)}% · SOH: {(current.soh * 100).toFixed(3)}% · {current.batteryVolts}V ({current.batteryCurrent}A)
+                    </div>
+                  </div>
+                </div>
+
+                {/* CENTER COLUMN: CONNECTORS & CENTRAL AC BUS */}
+                <div className="flow-center-col">
+                  {/* Top Bridge: Solar to Bus & Bus to Load */}
+                  <div className="flow-bridge">
+                    <div className="bridge-segment">
+                      <div
+                        className="bridge-pulse solar"
+                        style={{
+                          width: `${Math.min(100, (current.pv / (pvKw || 1)) * 100)}%`,
+                          opacity: current.pv > 1 ? 1 : 0.2
+                        }}
+                      />
+                    </div>
+                    <span className="bridge-arrow">→</span>
+                    <div className="bridge-segment">
+                      <div
+                        className="bridge-pulse load"
+                        style={{ width: `${Math.min(100, (current.load / (dieselKw + batteryKw || 1)) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Central AC Bus */}
+                  <div className="bus-hub">
+                    <span className="bus-title">CENTRAL AC BUS</span>
+                    <b className="bus-power">
+                      {(current.pv + current.diesel + Math.max(0, current.battery)).toFixed(0)} kW
+                    </b>
+                    <small className="bus-spec">50 Hz · 400 V · 3-Phase</small>
+                    <div className="bus-balance-status">
+                      {current.unmet > 0.1 ? (
+                        <span style={{ color: 'var(--red)' }}>Deficit: {current.unmet.toFixed(1)} kW</span>
+                      ) : (
+                        <span style={{ color: 'var(--green)' }}>✓ Power Balanced</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bottom Bridge: Battery to Bus & Diesel to Bus */}
+                  <div className="flow-bridge">
+                    <div className="bridge-segment">
+                      <div
+                        className={`bridge-pulse ${current.battery >= 0 ? 'battery-dis' : 'battery-chg'}`}
+                        style={{
+                          width: `${Math.min(100, (Math.abs(current.battery) / (batteryKw || 1)) * 100)}%`,
+                          opacity: Math.abs(current.battery) > 0.5 ? 1 : 0.2
+                        }}
+                      />
+                    </div>
+                    <span className="bridge-arrow">{current.battery >= 0 ? '→' : '←'}</span>
+                    <div className="bridge-segment">
+                      <div
+                        className="bridge-pulse diesel"
+                        style={{
+                          width: `${Math.min(100, (current.diesel / (dieselKw || 1)) * 100)}%`,
+                          opacity: current.diesel > 1 ? 1 : 0.2
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* RIGHT COLUMN: LOAD & DIESEL */}
+                <div className="flow-col">
+                  {/* Load Node */}
+                  <div className="node load active-flow">
+                    <div className="node-head">
+                      <div className="node-title">
+                        <Zap size={16} />
+                        <strong>LOAD DEMAND</strong>
+                      </div>
+                      <span className="node-tag">{Math.round(loadScalePct)}% scale</span>
+                    </div>
+                    <div className="node-val">
+                      {current.load.toFixed(1)} <small>kW</small>
+                    </div>
+                    <div className="node-sub">{loadProfile} profile</div>
+                  </div>
+
+                  {/* Diesel Gen Node */}
+                  <div className={`node diesel ${current.diesel > 1 ? 'active-flow' : ''}`}>
+                    <div className="node-head">
+                      <div className="node-title">
+                        <Gauge size={16} />
+                        <strong>DIESEL GEN ({dieselKw} kW)</strong>
+                      </div>
+                      <span className={`node-tag ${current.dgRunning ? 'tag-warn' : ''}`}>
+                        {current.dgRunning ? `${Math.round(current.dgLoadingRatio * 100)}% LOAD` : 'STANDBY'}
+                      </span>
+                    </div>
+                    <div className="node-val">
+                      {current.diesel.toFixed(1)} <small>kW</small>
+                    </div>
+                    <div className="node-sub">
+                      {current.dgRunning
+                        ? `Fuel: ${current.fuelHourlyRate.toFixed(1)} L/h · CO2: ${(current.co2RateKg / 0.25).toFixed(1)} kg/h`
+                        : 'Standby (Cold)'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* DUAL COMPARISON DRAWER */}
             {dualView && (
@@ -1115,8 +1676,8 @@ export default function MicrogridLabPage() {
               value={`${Math.round(current.soc * 100)}`}
               unit="%"
               tone="cyan"
-              badge={`Safe ${Math.round(DEFAULT_PARAMS.batteryMinSoc * 100)}–${Math.round(DEFAULT_PARAMS.batteryMaxSoc * 100)}%`}
-              subtext={`Terminal Target: ${Math.round((current.mpcPredictedSocTerminal ?? DEFAULT_PARAMS.batteryInitialSoc) * 100)}%`}
+              badge={`Safe ${minSocPct}–${maxSocPct}%`}
+              subtext={`Terminal Target: ${Math.round((current.mpcPredictedSocTerminal ?? (currentParams.batteryInitialSoc || 0.58)) * 100)}%`}
             />
             <MetricCard
               label="Battery SOH"
@@ -1472,13 +2033,13 @@ export default function MicrogridLabPage() {
                 <div>
                   <h3>2. Microgrid Physical Constraints</h3>
                   <p className="check">
-                    <CheckCircle2 /> Battery State of Charge Bound: {Math.round(DEFAULT_PARAMS.batteryMinSoc * 100)}% ≤ SOC(k) ≤ {Math.round(DEFAULT_PARAMS.batteryMaxSoc * 100)}% <b>PASS</b>
+                    <CheckCircle2 /> Battery State of Charge Bound: {minSocPct}% ≤ SOC(k) ≤ {maxSocPct}% <b>PASS</b>
                   </p>
                   <p className="check">
-                    <CheckCircle2 /> Diesel Minimum Loading (Wet-stacking limit): P_dg ≥ {Math.round(DEFAULT_PARAMS.dieselMinLoadRatio * 100)}% ({DEFAULT_PARAMS.dieselRatedCapacityKw * DEFAULT_PARAMS.dieselMinLoadRatio} kW) <b>PASS</b>
+                    <CheckCircle2 /> Diesel Minimum Loading (Wet-stacking limit): P_dg ≥ {dieselMinLoadPct}% ({((dieselKw * dieselMinLoadPct) / 100).toFixed(1)} kW) <b>PASS</b>
                   </p>
                   <p className="check">
-                    <CheckCircle2 /> Generator Thermal Ramp-Rate: |ΔP_dg| ≤ {DEFAULT_PARAMS.dieselMaxRampKw} kW/step <b>PASS</b>
+                    <CheckCircle2 /> Generator Thermal Ramp-Rate: |ΔP_dg| ≤ {dieselRampKw} kW/step <b>PASS</b>
                   </p>
                   <p className="check">
                     <CheckCircle2 /> Microgrid AC Bus Residual: ∑ P_gen − ∑ P_load = 0.00 kW <b>PASS</b>
@@ -1903,6 +2464,12 @@ export default function MicrogridLabPage() {
           </div>
         </div>
       )}
+
+      {/* METHOD OF OPERATION & CONTROLLER ARCHITECTURE MODAL */}
+      <MethodOfOperationModal
+        isOpen={showMethodModal}
+        onClose={() => setShowMethodModal(false)}
+      />
 
       {/* FOOTER */}
       <footer>
